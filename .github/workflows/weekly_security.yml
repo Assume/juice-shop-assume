@@ -1,0 +1,65 @@
+name: Weekly Codex security consolidation
+
+on:
+  schedule:
+    # Scheduled workflows run on the default branch. Pick a non-hour boundary
+    # to reduce GitHub Actions schedule congestion.
+    - cron: "17 3 * * 1"
+  workflow_dispatch:
+    inputs:
+      upload:
+        description: Upload the resulting SARIF to Code Scanning
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: weekly-codex-security-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  consolidate:
+    name: Discover, validate, and upload findings
+    runs-on: ubuntu-latest
+    # GitHub App installation tokens expire after one hour.
+    timeout-minutes: 55
+
+    steps:
+      - name: Check out the analyzed commit
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Create least-privilege GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ vars.CODEX_SECURITY_APP_CLIENT_ID }}
+          private-key: ${{ secrets.CODEX_SECURITY_APP_PRIVATE_KEY }}
+          permission-security-events: write
+
+      - name: Install the matching Codex CLI
+        run: npm install --global @openai/codex@0.146.1
+
+      # Responsibility 1 must run before this job for the same commit. It may
+      # either supply `validated-codeql-sarif` below, or dismiss false positives
+      # so the API fallback can reconstruct validated findings from open alerts.
+      - name: Consolidate CodeQL and Codex findings
+        id: consolidate
+        uses: ./
+        with:
+          github-token: ${{ steps.app-token.outputs.token }}
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          upload: ${{ github.event_name != 'workflow_dispatch' || inputs.upload }}
+
+      - name: Preserve the evidence bundle
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: codex-security-${{ github.sha }}
+          path: security-artifacts/
+          if-no-files-found: warn
+          retention-days: 30
