@@ -2,8 +2,7 @@ name: Weekly Codex security consolidation
 
 on:
   schedule:
-    # Scheduled workflows run on the default branch. Pick a non-hour boundary
-    # to reduce GitHub Actions schedule congestion.
+    # Mondays at 03:17 UTC. Scheduled workflows run from the default branch.
     - cron: "17 3 * * 1"
   workflow_dispatch:
     inputs:
@@ -13,6 +12,7 @@ on:
         default: true
         type: boolean
 
+# The built-in GITHUB_TOKEN is scoped to this target repository.
 permissions:
   contents: read
   security-events: write
@@ -36,12 +36,12 @@ jobs:
       - name: Install the matching Codex CLI
         run: npm install --global @openai/codex@0.146.1
 
-      # Responsibility 1 must run before this job for the same commit. It may
-      # either supply `validated-codeql-sarif` below, or dismiss false positives
-      # so the API fallback can reconstruct validated findings from open alerts.
+      # Responsibility 1 must already have validated the CodeQL alerts for
+      # this exact commit. When validated-codeql-sarif is omitted, the action
+      # treats the still-open CodeQL alerts as the validated set.
       - name: Consolidate CodeQL and Codex findings
         id: consolidate
-        uses: ./
+        uses: Assume/OpenAITakeHomeAssignment@912819e34a456db3cbb4dd6bd8105da025e5cc3a
         with:
           github-token: ${{ github.token }}
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
